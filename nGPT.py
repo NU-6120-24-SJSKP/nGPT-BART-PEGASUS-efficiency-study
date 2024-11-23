@@ -365,9 +365,9 @@ class nGPTMLP(nn.Module):
 
 def top_k_top_p_filtering(logits, top_k=0, top_p=1.0, filter_value=-float("Inf")):
     """
-    Yoinked this code from huggingface transformers. I don't really want this to live here, eventually
-    want to get this out.
-    TODO: Move this out and revisit generate function.
+    Yoinked this code from huggingface transformers and adapted to this model. 
+    Original function: 
+    huggingface/transformers@3b00b623b7cad9e1b7c71c97fff24a0286b37045
     """
     top_k = min(top_k, logits.size(-1))
     if top_k > 0:
