@@ -40,6 +40,8 @@ scaler = GradScaler(enabled=USE_AMP)
 # ngpt specific
 USE_PARAMETRIZE = True
 
+# Parts of this script are heavily adapted from 
+# https://github.com/lucidrains/nGPT-pytorch/blob/main/train.py
 
 # helpers
 def exists(v):
