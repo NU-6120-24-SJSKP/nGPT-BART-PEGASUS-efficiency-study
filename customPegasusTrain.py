@@ -58,11 +58,12 @@ TRAINING_PARAMS = {
     'MAX_TARGET_LENGTH': 128,
     'BATCH_SIZE': 4,
     'GRADIENT_ACCUMULATION_STEPS': 2,
-    'NUM_EPOCHS': 20,
+    'NUM_EPOCHS': 10,
     'LEARNING_RATE': 2e-5,
     'WARMUP_RATIO': 0.1,
     'WEIGHT_DECAY': 0.01,
-    'EARLY_STOPPING_PATIENCE': 3
+    'EARLY_STOPPING_PATIENCE': 3,
+    'num_samples': 3000
 }
 
 def set_seed(seed=42):
@@ -133,14 +134,30 @@ def evaluate(model, data_loader, tokenizer, device):
     model.eval()
     scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
     rouge_scores = {'rouge1': [], 'rouge2': [], 'rougeL': []}
+    
+    total_time = 0.0
+    total_tokens = 0
+    peak_memory = 0.0
 
     with torch.no_grad():
         for batch in tqdm(data_loader, desc="Evaluating"):
+            start_time = time.time()
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["labels"].to(device)
 
+            if torch.cuda.is_available():
+                torch.cuda.reset_peak_memory_stats(device)
+
             generated_ids = model.generate(input_ids=input_ids, attention_mask=attention_mask, max_length=TRAINING_PARAMS['MAX_TARGET_LENGTH'])
+            
+            step_time = time.time() - start_time
+            total_time += step_time
+            total_tokens += sum(len(ids) for ids in generated_ids)
+            
+            if torch.cuda.is_available():
+                current_peak_memory = torch.cuda.max_memory_allocated(device) / (1024 ** 2)
+                peak_memory = max(peak_memory, current_peak_memory)
 
             for i in range(len(input_ids)):
                 reference = tokenizer.decode(labels[i], skip_special_tokens=True)
@@ -152,7 +169,7 @@ def evaluate(model, data_loader, tokenizer, device):
 
     avg_rouge = {metric: sum(scores) / len(scores) for metric, scores in rouge_scores.items()}
 
-    return avg_rouge
+    return avg_rouge, total_time, total_tokens, peak_memory
 
 
 
@@ -175,20 +192,25 @@ def train_model(model, train_loader, val_loader, tokenizer, device, num_epochs):
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps)
         # Scheduler for reducing learning rate when validation loss stagnates
         scheduler_plateau = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, 
-            mode='min', 
-            factor=0.1, 
+            optimizer,
+            mode='min',
+            factor=0.1,
             patience=4,
             verbose=True
         )
         best_val_loss = float('inf')
-        best_model_path = "/content/drive/My Drive/NLP-Project/best_pegasus_scartch.pt"
+        best_model_path = "/content/drive/My Drive/NLP-Project/best_custom_pegasus-TEST.pt"
         patience = TRAINING_PARAMS['EARLY_STOPPING_PATIENCE']
         no_improve = 0
 
         train_losses = []
         val_losses = []
         rouge_scores = {'rouge1': [], 'rouge2': [], 'rougeL': []}
+        train_batch_losses = []  # For per-step losses
+        val_perplexities = []   # For validation perplexity
+        inference_times = []    # For inference timing
+        tokens_per_seconds = [] # For throughput
+        peak_memory_usages = [] # For memory usage
 
         start_time = time.time()
 
@@ -226,6 +248,7 @@ def train_model(model, train_loader, val_loader, tokenizer, device, num_epochs):
                         # Update loss tracking
                         total_train_loss += current_loss.item() * TRAINING_PARAMS['GRADIENT_ACCUMULATION_STEPS']
                         batch_count += 1
+                        train_batch_losses.append(current_loss.item() * TRAINING_PARAMS['GRADIENT_ACCUMULATION_STEPS'])
 
                         # Update progress bar
                         if batch_count > 0:
@@ -298,11 +321,19 @@ def train_model(model, train_loader, val_loader, tokenizer, device, num_epochs):
                     # # Evaluate ROUGE scores
                     # if (epoch + 1) % 2 == 0:
                     print(f"Evaluating after epoch {epoch+1}...")
-                    current_rouge = evaluate(model, val_loader, tokenizer, device)
+                    current_rouge, total_time, total_tokens, peak_memory = evaluate(model, val_loader, tokenizer, device)
+                    inference_times.append(total_time)
+                    tokens_per_seconds.append(total_tokens / total_time if total_time > 0 else 0)
+                    peak_memory_usages.append(peak_memory)
+
                     for metric in rouge_scores:
                         rouge_scores[metric].append(current_rouge[metric])
-                        
+
                     print(f"Current ROUGE Scores: {current_rouge}")
+
+
+                    val_perplexities.append(torch.exp(torch.tensor(avg_val_loss)).item())
+
 
                     # Model saving with error handling
                     if avg_val_loss < best_val_loss:
@@ -348,27 +379,91 @@ def train_model(model, train_loader, val_loader, tokenizer, device, num_epochs):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    return train_losses, val_losses, rouge_scores, training_time
+    return train_losses, val_losses, rouge_scores, training_time, train_batch_losses, val_perplexities, inference_times, tokens_per_seconds, peak_memory_usages
 
 
 def plot_training_progress(train_losses, val_losses, rouge_scores):
     plt.figure(figsize=(12, 8))
+    
+    # Plot losses
     plt.subplot(2, 2, 1)
     plt.plot(train_losses, label='Train Loss')
     plt.plot(val_losses, label='Validation Loss')
-    plt.legend()
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
     plt.title('Training and Validation Loss')
+    plt.legend()
+    plt.grid(True)
 
+    # Plot ROUGE scores
     plt.subplot(2, 2, 3)
     for metric, scores in rouge_scores.items():
         plt.plot(scores, label=metric)
-    plt.legend()
+    plt.xlabel('Epoch')
+    plt.ylabel('Score')
     plt.title('ROUGE Scores')
+    plt.legend()
+    plt.grid(True)
 
     plt.tight_layout()
     plt.savefig('training_progress.png')
     plt.close()
-    files.download('training_progress.png')
+
+
+def plot_train_loss_per_step(batch_losses):
+    plt.figure(figsize=(10, 6))
+    plt.plot(batch_losses, label='Training Loss per Step', color='blue', linewidth=0.7)
+    plt.xlabel('Batch/Step')
+    plt.ylabel('Loss')
+    plt.title('Training Loss per Step')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('train_loss_per_step.png')
+    plt.close()
+
+def plot_val_perplexity(val_perplexities):
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, len(val_perplexities) + 1), val_perplexities, label='Validation Perplexity', color='green', marker='o')
+    plt.xlabel('Epoch')
+    plt.ylabel('Perplexity')
+    plt.title('Validation Perplexity per Epoch')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('val_perplexity_per_epoch.png')
+    plt.close()
+
+def plot_inference_time(inference_times):
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, len(inference_times) + 1), inference_times, label='Inference Time (s)', color='purple', marker='o')
+    plt.xlabel('Epoch')
+    plt.ylabel('Time (s)')
+    plt.title('Inference Time per Epoch')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('inference_time_vs_epoch.png')
+    plt.close()
+
+def plot_tokens_per_second(tokens_per_seconds):
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, len(tokens_per_seconds) + 1), tokens_per_seconds, label='Tokens per Second', color='orange', marker='o')
+    plt.xlabel('Epoch')
+    plt.ylabel('Tokens per Second')
+    plt.title('Tokens per Second per Epoch')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('tokens_per_second_vs_epoch.png')
+    plt.close()
+
+def plot_peak_memory_usage(peak_memory_usages):
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, len(peak_memory_usages) + 1), peak_memory_usages, label='Peak Memory Usage (MB)', color='green', marker='o')
+    plt.xlabel('Epoch')
+    plt.ylabel('Memory (MB)')
+    plt.title('Peak Memory Usage per Epoch')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('peak_memory_usage_vs_epoch.png')
+    plt.close()
 
 
 # def generate_summary(model, article, tokenizer, device, max_length=128):
@@ -439,13 +534,18 @@ def main():
         inspect_frozen_params(model)
 
 
-        train_data, val_data = load_data(num_samples=15000)
+        train_data, val_data = load_data(TRAINING_PARAMS['num_samples'])
         train_loader, val_loader = create_dataloaders(train_data, val_data, tokenizer, TRAINING_PARAMS['BATCH_SIZE'])
-        train_losses, val_losses, rouge_scores, training_time = train_model(model, train_loader, val_loader, tokenizer, device, TRAINING_PARAMS['NUM_EPOCHS'])
-        plot_training_progress(train_losses, val_losses,rouge_scores)
+        train_losses, val_losses, rouge_scores, training_time, train_batch_losses, val_perplexities, inference_times, tokens_per_seconds, peak_memory_usages = train_model(model, train_loader, val_loader, tokenizer, device, TRAINING_PARAMS['NUM_EPOCHS'])
+        plot_training_progress(train_losses, val_losses, rouge_scores)
+        plot_train_loss_per_step(train_batch_losses)
+        plot_val_perplexity(val_perplexities)
+        plot_inference_time(inference_times)
+        plot_tokens_per_second(tokens_per_seconds)
+        plot_peak_memory_usage(peak_memory_usages)
 
         print("Evaluating fine-tuned model...")
-        fine_tuned_rouge = evaluate(model, val_loader, tokenizer, device)
+        fine_tuned_rouge, total_time, total_tokens, peak_memory = evaluate(model, val_loader, tokenizer, device)
         print("Fine-tuned Model Performance:")
         print(f"ROUGE Scores: {fine_tuned_rouge}")
         print(f"Total training time: {training_time:.2f} seconds")
