@@ -40,7 +40,7 @@ TRAINING_PARAMS = {
     'MAX_TARGET_LENGTH': 128,
     'BATCH_SIZE': 4,
     'GRADIENT_ACCUMULATION_STEPS': 2,
-    'NUM_EPOCHS': 20,
+    'NUM_EPOCHS': 10,
     'LEARNING_RATE': 2e-5,
     'WARMUP_RATIO': 0.1,
     'WEIGHT_DECAY': 0.01,
@@ -52,13 +52,6 @@ def set_seed(seed=42):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-# def load_data(num_samples=3000):
-#     dataset = load_dataset('cnn_dailymail', '3.0.0')
-#     full_train_data = dataset['train'].select(range(num_samples))
-#     train_size = int(0.9 * len(full_train_data))
-#     train_data = full_train_data.select(range(train_size))
-#     val_data = full_train_data.select(range(train_size, len(full_train_data)))
-#     return train_data, val_data
 
 def load_data(num_samples=1000):
     # Load the dataset
@@ -189,8 +182,10 @@ def train_model(model, train_loader, val_loader, tokenizer, device, num_epochs, 
         val_perplexities = []
         inference_times = []
         tokens_per_seconds = []
+        tokens_seen_so_far = 0
+        training_tokens = []
         peak_memory_usages = []
-        val_losses = []
+        val_losses = []  
         rouge_scores = {'rouge1': [], 'rouge2': [], 'rougeL': []}
 
         start_time = time.time()
@@ -230,6 +225,7 @@ def train_model(model, train_loader, val_loader, tokenizer, device, num_epochs, 
                         train_batch_losses.append(current_loss.item() * TRAINING_PARAMS['GRADIENT_ACCUMULATION_STEPS'])
                         total_train_loss += current_loss.item() * TRAINING_PARAMS['GRADIENT_ACCUMULATION_STEPS']
                         batch_count += 1
+                        tokens_seen_so_far += batch['input_ids'].numel()
 
                         # Update progress bar
                         if batch_count > 0:
@@ -284,12 +280,11 @@ def train_model(model, train_loader, val_loader, tokenizer, device, num_epochs, 
                                 continue
                             else:
                                 raise e
-
                 if val_batch_count > 0:
                     avg_val_loss = total_val_loss / val_batch_count
                     val_losses.append(avg_val_loss)
                     val_perplexities.append(torch.exp(torch.tensor(avg_val_loss)).item())
-
+                    training_tokens.append(tokens_seen_so_far)
                     print(f"Epoch {epoch+1}/{num_epochs}")
                     print(f"Average Train Loss: {avg_train_loss:.4f}")
                     print(f"Average Val Loss: {avg_val_loss:.4f}")
@@ -361,7 +356,7 @@ def train_model(model, train_loader, val_loader, tokenizer, device, num_epochs, 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    return train_losses, val_losses, rouge_scores, training_time, train_batch_losses, val_perplexities, inference_times, tokens_per_seconds, peak_memory_usages
+    return train_losses, val_losses, rouge_scores, training_time, train_batch_losses, val_perplexities, inference_times, tokens_per_seconds, peak_memory_usages, training_tokens
 
 
 def plot_training_progress(train_losses, val_losses, rouge_scores):
@@ -382,12 +377,6 @@ def plot_training_progress(train_losses, val_losses, rouge_scores):
     plt.savefig('training_progress.png')
     plt.close()
     # files.download('training_progress.png')
-
-
-# def generate_summary(model, article, tokenizer, device, max_length=128):
-#     inputs = tokenizer(article, max_length=1024, truncation=True, return_tensors="pt").to(device)
-#     summary_ids = model.generate(inputs["input_ids"], num_beams=4, max_length=max_length, early_stopping=True)
-#     return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
 
 def generate_summary(model, article, tokenizer, device, max_length=None):
     """
@@ -525,6 +514,16 @@ def plot_peak_memory_usage(peak_memory_usages):
     plt.savefig('peak_memory_usage_vs_epoch.png')
     plt.close()
 
+def plot_training_tokens_loss(training_tokens,val_loss):
+    plt.figure(figsize=(8, 6))
+    plt.plot(training_tokens, val_loss)
+    plt.title("Validation Loss vs. Training Tokens")
+    plt.xlabel("Training Tokens")
+    plt.ylabel("Validation Loss")
+    plt.grid(True)
+    plt.savefig('plot_training_tokens_loss.png')
+    plt.close()
+
 def main():
     try:
         set_seed()
@@ -538,9 +537,9 @@ def main():
         inspect_frozen_params(model)
 
 
-        train_data, val_data = load_data(num_samples=1500)
+        train_data, val_data = load_data(num_samples=1000)
         train_loader, val_loader = create_dataloaders(train_data, val_data, tokenizer, TRAINING_PARAMS['BATCH_SIZE'])
-        train_losses, val_losses, rouge_scores, training_time, train_batch_losses, val_perplexities, inference_times, tokens_per_seconds, peak_memory_usages = train_model(model, train_loader, val_loader, tokenizer, device, TRAINING_PARAMS['NUM_EPOCHS'], config)
+        train_losses, val_losses, rouge_scores, training_time, train_batch_losses, val_perplexities, inference_times, tokens_per_seconds, peak_memory_usages, training_tokens = train_model(model, train_loader, val_loader, tokenizer, device, TRAINING_PARAMS['NUM_EPOCHS'], config)
         model_save_path = "./final_bart_model.pth"
         torch.save({
             'model': model,
@@ -553,9 +552,11 @@ def main():
         plot_val_loss_per_epoch(val_losses)
         plot_train_val_loss(train_losses, val_losses)
         plot_val_perplexity(val_perplexities)
+
         plot_inference_time(inference_times)
         plot_tokens_per_second(tokens_per_seconds)
         plot_peak_memory_usage(peak_memory_usages)
+        plot_training_tokens_loss(training_tokens,val_losses)
 
         print("Evaluating fine-tuned model...")
         fine_tuned_rouge = evaluate(model, val_loader, tokenizer, device)
