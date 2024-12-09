@@ -1,21 +1,15 @@
+import logging
 import os
-import signal
-import time
-
-from fvcore.nn import FlopCountAnalysis
-from rouge_score import rouge_scorer
-import random
+import pickle
 import re
 
+import matplotlib.pyplot as plt
 import tqdm
-import tracemalloc
-
+from datasets import load_dataset
+from fvcore.nn import FlopCountAnalysis
+from torch._C._nn import pad_sequence
 from torch.optim import Adam
 from torch.utils.data import DataLoader, Dataset
-
-from datasets import load_dataset
-import matplotlib.pyplot as plt
-import logging
 
 from config import *
 
@@ -36,32 +30,66 @@ print(f"Total number of parameters: {total_params}")
 # 33719952
 
 # sample flops
-example_input = torch.randint(0, 256, (BATCH_SIZE, SEQ_LEN)).long().to(device)  # Create example input tensor
+example_input = (
+    torch.randint(0, 256, (BATCH_SIZE, SEQ_LEN)).long().to(device)
+)  # Create example input tensor
 flops = FlopCountAnalysis(model, example_input)
 total_flops = flops.total()
 print(f"Total FLOPs: {total_flops}")
-
-
 # 68979554513.0
+
+
+def construct_metrics():
+    metrics = {
+        # losses
+        "train_loss_per_epoch": train_loss_per_epoch,  # NUM_EPOCHS
+        "val_loss_per_epoch": val_loss_per_epoch,  # validation_epochs
+        # "validation_epochs": validation_epochs,
+        # perplexities
+        "perplexities": perplexities,  # validation_epochs
+        "generation_perplexities": generation_perplexities,  # generation_epochs
+        # inference and memory
+        "tokens_per_second": tokens_per_second,  # generation_epochs
+        "memory_usages": memory_usages,  # generation_epochs
+        "inference_times": inference_times,  # generation_epochs
+        "rouge_scores": rouge_scores,
+        "training_tokens_4k": training_tokens_4k,
+        "training_tokens_1k": training_tokens_1k,
+        "training_tokens_8k": training_tokens_8k,
+        "val_losses_1k": val_losses_1k,
+        "val_losses_8k": val_losses_8k,
+        "val_losses_4k": val_losses_4k,
+    }
+    with open("metrics.pkl", "wb") as f:
+        pickle.dump(metrics, f)
+
 
 # using a very basic tokenizer
 def tokenize(examples):
     tokenized_text = []
-    for example in examples['article']:
+    for example in examples["article"]:
         # ignore non ascii
-        ascii_text = re.sub(r'[^\x00-\x7F]+', ' ', example)
+        ascii_text = re.sub(r"[^\x00-\x7F]+", " ", example)
         tokenized_text.append([ord(char) for char in ascii_text])
     return {"text": tokenized_text}
 
 
 # data preparation
-dataset = load_dataset("cnn_dailymail", "3.0.0", split={'train': 'train[:5000]', 'validation': 'validation[:4500]'})
-dataset = dataset.map(tokenize, batched=True, num_proc=4,
-                      remove_columns=['article', 'highlights', 'id'])
-dataset.set_format(type='torch')
-
-train_dataset = dataset['train']
-val_dataset = dataset['validation']
+dataset = load_dataset(
+    "cnn_dailymail",
+    "3.0.0",
+    split={"train": "train[:100]", "validation": "validation[:10]"},
+)
+# dataset = load_dataset("cnn_dailymail", "3.0.0")
+dataset = dataset.map(
+    tokenize, batched=True, num_proc=1, remove_columns=["article", "highlights", "id"]
+)
+dataset.set_format(type="torch")
+# split_index = int(0.8 * len(dataset["train"]))
+train_dataset = dataset["train"]
+val_dataset = dataset["validation"]
+# train_dataset = dataset["train"].select(range(split_index))
+# val_dataset = dataset["train"].select(range(split_index, len(dataset["train"])))
 
 
 # make dataset ngpt compatible to read
@@ -75,15 +103,28 @@ class TextSamplerDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, index):
-        text = self.data[index]['text']
-        text = text.to(device)
+        text = self.data[index]["text"]
 
-        if len(text) < self.seq_len + 1:
-            padding = torch.zeros(self.seq_len + 1 - len(text), dtype=torch.long).to(device)
-            full_seq = torch.cat([text, padding])
+        # Calculate maximum possible sequence length for this text
+        max_seq_len = min(self.seq_len, len(text) - 1)
+
+        if max_seq_len < 1:
+            # Text is too short, pad the entire sequence
+            padding = torch.zeros(self.seq_len + 1, dtype=torch.long)
+            full_seq = padding.to(device)
         else:
-            rand_start = torch.randint(0, len(text) - self.seq_len - 1, (1,))
-            full_seq = text[rand_start: rand_start + self.seq_len + 1].long()
+            # Adjust sequence length and get random start position
+            rand_start = torch.randint(0, len(text) - max_seq_len, (1,))
+            sequence = text[rand_start : rand_start + max_seq_len + 1]
+
+            # Pad if necessary to reach desired sequence length
+            if len(sequence) < self.seq_len + 1:
+                padding = torch.zeros(
+                    self.seq_len + 1 - len(sequence), dtype=torch.long
+                )
+                full_seq = torch.cat([sequence, padding]).to(device)
+            else:
+                full_seq = sequence.to(device)
 
         return full_seq
 
@@ -92,8 +133,19 @@ class TextSamplerDataset(Dataset):
 train_dataset = TextSamplerDataset(train_dataset, SEQ_LEN)
 val_dataset = TextSamplerDataset(val_dataset, SEQ_LEN)
 
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
+
+def collate_fn(batch):
+    # Add padding to create tensors of equal length within each batch
+    padded_batch = pad_sequence(batch, batch_first=True, padding_value=0).to(
+        device
+    )  # Pad and move to device
+    return padded_batch
+
+
+train_loader = DataLoader(
+    train_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_fn
+)
+val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, collate_fn=collate_fn)
 
 # optimizer
 optim = Adam(model.parameters(), lr=LEARNING_RATE)
@@ -106,219 +158,371 @@ if not USE_PARAMETRIZE:
     model.register_step_post_hook(optim)
 
 # training
-NUM_EPOCHS = 20
+NUM_EPOCHS = 200
+GENERATE_EVERY_EPOCH = 1
+VALIDATE_EVERY_EPOCH = 1
 BATCHES_PER_EPOCH = len(train_dataset) // BATCH_SIZE
-scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-best_val_loss = float('inf')
 patience = 3
-epochs_without_improvement = 0
 
-train_losses = []
-val_losses = []
-validation_epochs = []
-generation_epochs = []
-perplexities = []
-inference_times = []
-tokens_per_second = []
-memory_usages = []
+# loss lists
+val_loss_per_epoch = []
+train_loss_per_epoch = []
+
+# inference stuff
 training_tokens = []
 tokens_seen_so_far = 0
-train_losses_per_epoch = []
-train_losses_per_batch = []
-GENERATE_EVERY_EPOCH = 4  # not final value
-VALIDATE_EVERY_EPOCH = 4  # not final value
-generation_perplexities = []
-# contexts
-validation_epochs_1k = []
-validation_epochs_4k = []
-validation_epochs_8k = []
-val_losses_1k = []
-val_losses_4k = []
-val_losses_8k = []
-training_tokens_1k = []
-training_tokens_4k = []
-training_tokens_8k = []
+
+# perplexities
+perplexities = []
+
 # learning_rates = []
+metrics = {}
 
 CHECKPOINT_DIR = "checkpoints"
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
 BEST_MODEL_PATH = os.path.join(CHECKPOINT_DIR, "best_model.pt")
-
-
-def signal_handler(sig, frame):
-    print('You pressed Ctrl+C!')
-    print(f"Best model saved at {BEST_MODEL_PATH}")
-    exit(0)
-
-
-signal.signal(signal.SIGINT, signal_handler)
+EPOCH_MODEL = os.path.join(CHECKPOINT_DIR, "epoch_model.pt")
+TRAIN_MODEL = os.path.join(CHECKPOINT_DIR, "train_model.pt")
 
 CONTEXT_LENGTHS = [1024, 4096, 8192]
 
 # start training
 train_start_time = time.time()
 STEPS_PER_EPOCH = len(train_dataset) // BATCH_SIZE
-# scheduler = CosineAnnealingLR(optim, T_max=NUM_EPOCHS * STEPS_PER_EPOCH, eta_min=0)
+
 epoch_iterator = tqdm.tqdm(range(NUM_EPOCHS), mininterval=10.0, desc="training")
+# for epoch in epoch_iterator:
+#     epoch_start_time = time.time()
+#     batch_iterator = tqdm.tqdm(
+#         enumerate(train_loader),
+#         total=STEPS_PER_EPOCH,
+#         desc=f"Epoch {epoch + 1}",
+#         leave=False,
+#     )
+#     train_loss_per_batch = []
+#     val_loss = float("-inf")
+#     for batch_idx, data in batch_iterator:
+#         if batch_idx >= STEPS_PER_EPOCH:
+#             break
+#         model.train()
+#         data = data.to(device)
+#         running_loss = 0.0
+#         for _ in range(GRAD_ACCUM_EVERY):
+#             with torch.autocast(
+#                 device_type="cuda", dtype=torch.float16, enabled=USE_AMP
+#             ):
+#                 loss = model(data, return_loss=True)
+#
+#             scaler.scale(loss / GRAD_ACCUM_EVERY).backward()
+#             running_loss = loss.item()
+#
+#         curr_loss = running_loss / GRAD_ACCUM_EVERY
+#         train_loss_per_batch.append(curr_loss)
+#         print(f"training loss: {curr_loss:.3f}")
+#
+#         scaler.step(optim)
+#         scaler.update()
+#         optim.zero_grad()
+#
+#         tokens_seen_so_far += data.numel()
+#
+#     # validation state
+#     if (epoch + 1) == 1 or (epoch + 1) % VALIDATE_EVERY_EPOCH == 0:
+#         model.eval()
+#         with torch.no_grad():
+#             valid_data = next(val_loader)
+#             valid_data = valid_data.to(device)
+#             for context_length in CONTEXT_LENGTHS:
+#                 valid_data_truncated = valid_data[:, :context_length].to(device)
+#                 trunc_loss = model(valid_data_truncated, return_loss=True)
+#                 context_helper(context_length, trunc_loss, epoch, tokens_seen_so_far)
+#         val_loss = model(valid_data, return_loss=True)
+#         val_loss_per_epoch.append(val_loss.item())
+#         validation_epochs.append(epoch + 1)
+#         perplexity = torch.exp(val_loss).item()
+#         perplexities.append(perplexity)
+#         training_tokens.append(tokens_seen_so_far)
+#         print(f"validation loss: {val_loss:.3f}, " f"perplexity: {perplexity:.3f}")
+#         if val_loss < best_val_loss:
+#             best_val_loss = loss
+#
+#     # Generate state
+#     if (epoch + 1 == 1) or (epoch + 1) % GENERATE_EVERY_EPOCH == 0:
+#         model.eval()
+#         with torch.no_grad():
+#             inp = random.choice(val_dataset)[:PRIME_LENGTH]
+#             prime = decode_tokens(inp)
+#             prompt = inp[None, ...].to(device)
+#             prompt_cumulative_inference(prompt, val_dataset, prime)
+#     epoch_loss = sum(train_loss_per_batch) / STEPS_PER_EPOCH
+#     train_loss_per_epoch.append(
+#         epoch_loss
+#     )  # Append average training loss for the epoch
+#     print(f"Epoch {epoch + 1}, Average Loss over the epoch: {epoch_loss:.4f}")
+#     epoch_end_time = time.time()
+#     time_per_epoch = (epoch_end_time - epoch_start_time) / (epoch + 1)
+#     print(f"Time per Epoch: {time_per_epoch:.4f} seconds")
+#     construct_metrics()
+#     if val_loss >= epoch_loss:
+#         if patience == 0:
+#             print(f"Model has converged, saving metrics and model")
+#             torch.save(model.state_dict(), BEST_MODEL_PATH)
+#             break
+#         else:
+#             patience -= 1
+#     print(f"Saving model at epoch {epoch + 1}")
+#     torch.save(model.state_dict(), EPOCH_MODEL)
+
+# Initialize variables for early stopping
+best_val_loss = float("inf")  # Best validation loss starts as infinity
+patience_counter = 0  # Counter for early stopping
+
 for epoch in epoch_iterator:
     epoch_start_time = time.time()
+    batch_iterator = tqdm.tqdm(
+        enumerate(train_loader),
+        total=STEPS_PER_EPOCH,
+        desc=f"Epoch {epoch + 1}",
+        leave=False,
+    )
+    train_loss_per_batch = []
+    val_loss = float("-inf")
+
+    # Training loop (unchanged)
     running_loss = 0.0
-    batch_iterator = tqdm.tqdm(enumerate(train_loader), total=STEPS_PER_EPOCH, desc=f"Epoch {epoch + 1}", leave=False)
     for batch_idx, data in batch_iterator:
+        if batch_idx >= STEPS_PER_EPOCH:
+            break
+
         model.train()
         data = data.to(device)
-        for _ in range(GRAD_ACCUM_EVERY):
-            with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=USE_AMP):
-                loss = model(data, return_loss=True)
 
-            scaler.scale(loss / GRAD_ACCUM_EVERY).backward()
-            running_loss += loss.item()
+        with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=USE_AMP):
+            loss = model(data, return_loss=True)
 
-        train_losses_per_batch.append(loss.item())
-        print(f"training loss: {loss.item():.3f}")
+        loss = loss / GRAD_ACCUM_EVERY
+        loss.backward()
 
-        scaler.step(optim)
-        # scheduler.step()  # Update learning rate *after* optimizer step
-        # current_lr = scheduler.get_last_lr()[0]  # Get current learning rate
-        # learning_rates.append(current_lr)
+        running_loss += loss.item()
 
-        scaler.update()
-        optim.zero_grad()
+        if (batch_idx + 1) % GRAD_ACCUM_EVERY == 0 or (
+            batch_idx + 1
+        ) == STEPS_PER_EPOCH:
+            scaler.step(optim)
+            scaler.update()
+            optim.zero_grad()
+
+            curr_loss = running_loss / GRAD_ACCUM_EVERY
+            train_loss_per_batch.append(curr_loss)
+            print(f"Training loss: {curr_loss:.3f}")
+
+            running_loss = 0.0
 
         tokens_seen_so_far += data.numel()
 
-        # validation state
-        if (epoch + 1) % VALIDATE_EVERY_EPOCH == 0 and batch_idx + 1 == STEPS_PER_EPOCH:
-            validation_epochs.append(epoch + 1)
-            model.eval()
-            with torch.no_grad():
-                for context_length in CONTEXT_LENGTHS:
-                    valid_data = next(val_loader)
-                    valid_data = valid_data.to(device)
-                    valid_data_truncated = valid_data[:, :context_length].to(device)
-                    loss = model(valid_data_truncated, return_loss=True)
-                    perplexity = torch.exp(loss)
-                    if context_length == 1024:
-                        val_losses_1k.append(loss.item())
-                        validation_epochs_1k.append(epoch + (batch_idx + 1) / STEPS_PER_EPOCH)
-                        training_tokens_1k.append(tokens_seen_so_far)
-                    elif context_length == 4096:
-                        val_losses_4k.append(loss.item())
-                        validation_epochs_4k.append(epoch + (batch_idx + 1) / STEPS_PER_EPOCH)
-                        training_tokens_4k.append(tokens_seen_so_far)
-                    elif context_length == 8192:
-                        val_losses_8k.append(loss.item())
-                        validation_epochs_8k.append(epoch + (batch_idx + 1) / STEPS_PER_EPOCH)
-                        training_tokens_8k.append(tokens_seen_so_far)
-                perplexities.append(perplexity.item())
-                training_tokens.append(tokens_seen_so_far)
-                print(f"validation loss: {loss.item():.3f}, perplexity: {perplexity.item():.3f}")
-                val_losses.append(loss.item())
-                if loss < best_val_loss:
-                    best_val_loss = loss
-                    epochs_without_improvement = 0
-                    torch.save(model.state_dict(), BEST_MODEL_PATH)
-                else:
-                    epochs_without_improvement += 1
-                    if epochs_without_improvement >= patience:
-                        print(f"Early stopping triggered at epoch {epoch + 1}")
-                        break
+    # Validation step
+    if (epoch + 1) == 1 or (epoch + 1) % VALIDATE_EVERY_EPOCH == 0:
+        model.eval()
+        with torch.no_grad():
+            valid_data = next(val_loader)
+            valid_data = valid_data.to(device)
+            for context_length in CONTEXT_LENGTHS:
+                valid_data_truncated = valid_data[:, :context_length].to(device)
+                trunc_loss = model(valid_data_truncated, return_loss=True)
+                context_helper(context_length, trunc_loss, epoch, tokens_seen_so_far)
 
-        # Generate state
-        if (epoch + 1) % GENERATE_EVERY_EPOCH == 0 and batch_idx + 1 == STEPS_PER_EPOCH:
-            generation_epochs.append(epoch + 1)
-            model.eval()
-            with torch.no_grad():
-                inp = random.choice(val_dataset)[:PRIME_LENGTH]
-                prime = decode_tokens(inp)
+        val_loss = model(valid_data, return_loss=True)
+        val_loss_per_epoch.append(val_loss.item())
+        perplexity = torch.exp(val_loss).item()
+        perplexities.append(perplexity)
+        training_tokens.append(tokens_seen_so_far)
+        print(f"Validation loss: {val_loss:.3f}, Perplexity: {perplexity:.3f}")
 
-                prompt = inp[None, ...].to(device)
-                start_time = time.time()
-                tracemalloc.start()
-                sampled = base_decoding(model, prompt, GENERATE_LENGTH)
-                end_time = time.time()
-                current, peak = tracemalloc.get_traced_memory()
-                tracemalloc.stop()
-                memory_usages.append(peak / 10 ** 6)
-                generated_text = decode_tokens(sampled[0])
+        # Early stopping logic
+        if val_loss < best_val_loss - 0.01:
+            best_val_loss = val_loss.item()
+            patience_counter = 0
+            print(f"New best validation loss: {best_val_loss:.3f}. Saving model...")
+            torch.save(model.state_dict(), BEST_MODEL_PATH)
+        else:
+            patience_counter += 1
+            print(
+                f"No improvement in validation loss. Patience counter: {patience_counter}/{patience}"
+            )
 
-                inference_time = end_time - start_time
-                inference_times.append(inference_time)
-
-                num_tokens_generated = len(generated_text)
-                tokens_per_sec = num_tokens_generated / inference_time
-                tokens_per_second.append(tokens_per_sec)
-
-                # Get a random target summary from the validation set for ROUGE calculation
-                random_val_index = random.randint(0, len(val_dataset) - 1)
-                target_summary = decode_tokens(val_dataset[random_val_index])  # Decode target
-
-                scores = scorer.score(target_summary, generated_text)
-
-                generation_loss = model(sampled, return_loss=True)
-                generation_perplexity = torch.exp(generation_loss)
-                generation_perplexities.append(generation_perplexity.item())
-                print(f"Generation Perplexity: {generation_perplexity.item():.3f}\n")
-
-                print(f"Prime (Input):\n{prime} \n\n {'*' * 100}\n")
-                print(f"Generated Continuation:\n{generated_text}\n{'*' * 100}\n")
-                print(f"ROUGE Scores:\n{scores}\n")
-                print(f"Inference Time: {inference_time:.3f} seconds")
-                print(f"Tokens per Second: {tokens_per_sec:.3f}")
-                print(f"Peak Memory Usage: {peak / 10 ** 6:.6f} MB")
-
-        if batch_idx + 1 >= STEPS_PER_EPOCH:  # To ensure only one epoch of data is processed
+        # Stop training if patience is exhausted
+        if patience_counter >= patience:
+            print("Early stopping triggered. Training has converged.")
             break
 
-    epoch_loss = running_loss / (STEPS_PER_EPOCH * GRAD_ACCUM_EVERY)
-    train_losses_per_epoch.append(epoch_loss)  # Append average training loss for the epoch
-    print(f"Epoch {epoch + 1}, Average Loss: {epoch_loss:.4f}")
+    # Generate step (unchanged)
+    if (epoch + 1 == 1) or (epoch + 1) % GENERATE_EVERY_EPOCH == 0:
+        model.eval()
+        with torch.no_grad():
+            inp = random.choice(val_dataset)[:PRIME_LENGTH]
+            prime = decode_tokens(inp)
+            prompt = inp[None, ...].to(device)
+            prompt_cumulative_inference(prompt, val_dataset, prime)
+
+    # Calculate and log average training loss for the epoch
+    epoch_loss = sum(train_loss_per_batch) / len(train_loss_per_batch)
+    train_loss_per_epoch.append(epoch_loss)
+    print(f"Epoch {epoch + 1}, Average Loss over the epoch: {epoch_loss:.4f}")
+
     epoch_end_time = time.time()
     time_per_epoch = (epoch_end_time - epoch_start_time) / (epoch + 1)
-    print(f"Average Time per Epoch: {time_per_epoch:.4f} seconds")
+    print(f"Time per Epoch: {time_per_epoch:.4f} seconds")
 
+    construct_metrics()
+
+    # Save checkpoint at each epoch
+    print(f"Saving model at epoch {epoch + 1}")
+    torch.save(model.state_dict(), EPOCH_MODEL)
+
+# for epoch in epoch_iterator:
+#     epoch_start_time = time.time()
+#     batch_iterator = tqdm.tqdm(
+#         enumerate(train_loader),
+#         total=STEPS_PER_EPOCH,
+#         desc=f"Epoch {epoch + 1}",
+#         leave=False,
+#     )
+#     train_loss_per_batch = []
+#     val_loss = float("-inf")
+#
+#     # Reset running loss for the epoch
+#     running_loss = 0.0
+#
+#     for batch_idx, data in batch_iterator:
+#         if batch_idx >= STEPS_PER_EPOCH:
+#             break
+#
+#         model.train()
+#         data = data.to(device)
+#
+#         # Forward pass with mixed precision (if enabled)
+#         with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=USE_AMP):
+#             loss = model(data, return_loss=True)
+#
+#         # Normalize loss by accumulation steps and backpropagate
+#         loss = loss / GRAD_ACCUM_EVERY
+#         loss.backward()
+#
+#         # Accumulate running loss for logging
+#         running_loss += loss.item()
+#
+#         # Perform optimizer step and reset gradients after every GRAD_ACCUM_EVERY steps
+#         if (batch_idx + 1) % GRAD_ACCUM_EVERY == 0 or (
+#             batch_idx + 1
+#         ) == STEPS_PER_EPOCH:
+#             scaler.step(optim)  # Apply scaled gradients
+#             scaler.update()  # Update scaler for mixed precision
+#             optim.zero_grad()  # Reset gradients
+#
+#             # Log the average loss over the accumulated steps
+#             curr_loss = running_loss / GRAD_ACCUM_EVERY
+#             train_loss_per_batch.append(curr_loss)
+#             print(f"Training loss: {curr_loss:.3f}")
+#
+#             # Reset running loss for the next accumulation cycle
+#             running_loss = 0.0
+#
+#         tokens_seen_so_far += data.numel()
+#
+#     # Validation step
+#     if (epoch + 1) == 1 or (epoch + 1) % VALIDATE_EVERY_EPOCH == 0:
+#         model.eval()
+#         with torch.no_grad():
+#             valid_data = next(val_loader)
+#             valid_data = valid_data.to(device)
+#             for context_length in CONTEXT_LENGTHS:
+#                 valid_data_truncated = valid_data[:, :context_length].to(device)
+#                 trunc_loss = model(valid_data_truncated, return_loss=True)
+#                 context_helper(context_length, trunc_loss, epoch, tokens_seen_so_far)
+#         val_loss = model(valid_data, return_loss=True)
+#         val_loss_per_epoch.append(val_loss.item())
+#         validation_epochs.append(epoch + 1)
+#         perplexity = torch.exp(val_loss).item()
+#         perplexities.append(perplexity)
+#         training_tokens.append(tokens_seen_so_far)
+#         print(f"Validation loss: {val_loss:.3f}, Perplexity: {perplexity:.3f}")
+#
+#         if val_loss < best_val_loss:
+#             best_val_loss = val_loss
+#
+#     # Generate step
+#     if (epoch + 1 == 1) or (epoch + 1) % GENERATE_EVERY_EPOCH == 0:
+#         model.eval()
+#         with torch.no_grad():
+#             inp = random.choice(val_dataset)[:PRIME_LENGTH]
+#             prime = decode_tokens(inp)
+#             prompt = inp[None, ...].to(device)
+#             prompt_cumulative_inference(prompt, val_dataset, prime)
+#
+#     # Calculate and log average training loss for the epoch
+#     epoch_loss = sum(train_loss_per_batch) / len(train_loss_per_batch)
+#     train_loss_per_epoch.append(
+#         epoch_loss
+#     )  # Append average training loss for the epoch
+#     print(f"Epoch {epoch + 1}, Average Loss over the epoch: {epoch_loss:.4f}")
+#
+#     epoch_end_time = time.time()
+#     time_per_epoch = (epoch_end_time - epoch_start_time) / (epoch + 1)
+#     print(f"Time per Epoch: {time_per_epoch:.4f} seconds")
+#
+#     construct_metrics()
+#
+#     # Early stopping or saving best model logic
+#     if val_loss >= epoch_loss:
+#         if patience == 0:
+#             print(f"Model has converged, saving metrics and model")
+#             torch.save(model.state_dict(), BEST_MODEL_PATH)
+#             break
+#         else:
+#             patience -= 1
+#
+#     print(f"Saving model at epoch {epoch + 1}")
+#     torch.save(model.state_dict(), EPOCH_MODEL)
+
+construct_metrics()
+torch.save(model.state_dict(), TRAIN_MODEL)
 train_end_time = time.time()
 time_training = train_end_time - train_start_time
 print(f"Training Time: {time_training:.3f} seconds")
 
-model.load_state_dict(torch.load(BEST_MODEL_PATH))
-print(f"Loaded best model from {BEST_MODEL_PATH}")
+# model.load_state_dict(torch.load(BEST_MODEL_PATH))
+# print(f"Loaded best model from {BEST_MODEL_PATH}")
 
 # plt.figure(figsize=(10, 8))
-
-# Loss, perplexity graphs
-# Batch Training Loss vs. Epochs
 plt.figure(figsize=(8, 6))
-# plt.subplot(2, 2, 1)
-plt.plot(range(len(train_losses_per_batch)),
-         train_losses_per_batch)
-plt.title("Training Loss per Batch/Step")
-plt.xlabel("Training Steps / Batches")
-plt.ylabel("Loss")
-# plt.show()
-plt.savefig("train_loss_vs_batch.png")
+plt.plot(range(1, len(train_loss_per_epoch) + 1), train_loss_per_epoch)
+plt.title("Training Loss vs Epochs")
+plt.xlabel("Training Epochs")
+plt.ylabel("Training Loss")
+plt.savefig("train_loss_vs_epoch.png")
 
-# Validation Loss vs. Epochs
-# plt.subplot(2, 2, 2)
 plt.figure(figsize=(8, 6))
-plt.plot(validation_epochs, val_losses)
-plt.title("Validation Loss")
-plt.xlabel("Epochs (Validation Steps)")
-plt.ylabel("Loss")
+plt.plot(range(1, len(val_loss_per_epoch) + 1), val_loss_per_epoch)
+plt.title("Validation Loss vs Epochs")
+plt.xlabel("Validation Epochs")
+plt.ylabel("Validation Loss")
 plt.savefig("validation_loss_vs_epoch.png")
 
-# Training and Validation Loss vs. Epochs (combined)
-# plt.subplot(2, 2, 3)
-from scipy.interpolate import interp1d
-
-train_loss_at_validation_epochs = interp1d(range(1, NUM_EPOCHS + 1), train_losses_per_epoch, kind='linear')(
-    validation_epochs)
-
-plt.plot(validation_epochs, train_loss_at_validation_epochs, label='Average Train Loss')  # Interpolated training loss
-plt.plot(validation_epochs, val_losses, label='Validation Loss')
-plt.title("Training and Validation Loss")
-plt.xlabel("Epochs (Validation Steps)")  # The unit would be epoch fractions now
+plt.plot(
+    range(1, len(train_loss_per_epoch) + 1),
+    train_loss_per_epoch,
+    color="blue",
+    label="Training",
+)
+plt.plot(
+    range(1, len(val_loss_per_epoch) + 1),
+    val_loss_per_epoch,
+    color="red",
+    label="Validation",
+)
+plt.title("Training and Validation Loss vs Epochs")
+plt.xlabel("Epochs")
 plt.ylabel("Loss")
 plt.legend()
 plt.savefig("train_loss_validation_loss_vs_epoch.png")
@@ -327,7 +531,7 @@ plt.savefig("train_loss_validation_loss_vs_epoch.png")
 # Perplexity vs. Epochs
 # plt.subplot(2, 2, 4)
 plt.figure(figsize=(8, 6))
-plt.plot(validation_epochs, perplexities)
+plt.plot(range(1, len(val_loss_per_epoch) + 1), perplexities)
 plt.title("Validation Perplexity (Combined)")
 plt.xlabel("Epochs (Validation Steps)")
 plt.ylabel("Perplexity")
@@ -336,32 +540,30 @@ plt.savefig("loss_vs_perplexity.png")
 # plt.show()
 
 # Inference plots
-plt.figure(figsize=(14, 6))
-
-plt.subplot(1, 3, 1)
-plt.plot(generation_epochs, inference_times)
+plt.figure(figsize=(8, 6))
+plt.plot(range(1, len(generation_perplexities) + 1), inference_times)
 plt.title("Inference Time")
 plt.xlabel("Epochs (Generation Steps)")
 plt.ylabel("Time (seconds)")
+plt.savefig("inference_time.png")
 
-plt.subplot(1, 3, 2)
-plt.plot(generation_epochs, tokens_per_second)
+plt.figure(figsize=(8, 6))
+plt.plot(range(1, len(generation_perplexities) + 1), tokens_per_second)
 plt.title("Tokens per Second")
 plt.xlabel("Epochs (Generation Steps)")
 plt.ylabel("Tokens/sec")
+plt.savefig("tokens_per_second.png")
 
-plt.subplot(1, 3, 3)
-plt.plot(generation_epochs, memory_usages)
+plt.figure(figsize=(8, 6))
+plt.plot(range(1, len(generation_perplexities) + 1), memory_usages)
 plt.title("Peak Memory Usage")
 plt.xlabel("Epochs (Generation Steps)")
 plt.ylabel("Memory Usage (MB)")
 plt.savefig("inference_graphs.png")
 
-# plt.show()
-
 # Generation perplexity
 plt.figure(figsize=(8, 6))
-plt.plot(generation_epochs, generation_perplexities)
+plt.plot(range(1, len(generation_perplexities) + 1), generation_perplexities)
 plt.title("Generation epochs vs Generation Perplexity")
 plt.xlabel("Epochs (Generation Steps)")
 plt.ylabel("Generation Perplexity")
@@ -370,7 +572,7 @@ plt.savefig("generation_perplexities.png")
 
 # Loss vs training tokens like in the paper
 plt.figure(figsize=(8, 6))
-plt.plot(training_tokens, val_losses)
+plt.plot(training_tokens, val_loss_per_epoch)
 plt.title("Validation Loss vs. Training Tokens")
 plt.xlabel("Training Tokens")
 plt.ylabel("Validation Loss")
@@ -406,14 +608,5 @@ plt.xlabel("Training Tokens")
 plt.ylabel("Validation Loss")
 plt.grid(True)
 plt.tight_layout()
-plt.savefig("training_tokens_all.png")
-# plt.show()
 
-# plt.figure(figsize=(8, 6))
-# plt.plot(range(len(learning_rates)), learning_rates)
-# plt.title("Learning Rate Schedule")
-# plt.xlabel("Training Steps / Batches")
-# plt.ylabel("Learning Rate")
-# plt.grid(True)
-# plt.savefig("learning_rates.png")
-# # plt.show()
+plt.savefig("training_tokens_all.png")

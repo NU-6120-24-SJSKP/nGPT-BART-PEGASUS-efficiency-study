@@ -4,7 +4,7 @@ from config import USE_PARAMETRIZE, device
 
 model = nGPT(
     num_tokens=256,
-    dim=512,
+    dim=1024,
     depth=8,
     dim_head=128,
     tied_embedding=True,
