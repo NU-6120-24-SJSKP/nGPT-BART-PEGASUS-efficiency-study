@@ -1,2 +1,8 @@
 best_pegasus_model.pth
 weights/
+plots/Test/inference_time_vs_epoch.png
+plots/Test/peak_memory_usage_vs_epoch.png
+plots/Test/tokens_per_second_vs_epoch.png
+plots/Test/train_loss_per_step.png
+plots/Test/training_progress.png
+plots/Test/val_perplexity_per_epoch.png
