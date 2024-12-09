@@ -1,4 +1,4 @@
-!pip install transformers datasets rouge_score nltk tqdm matplotlib
+#!pip install transformers datasets rouge_score nltk tqdm matplotlib
 
 import os
 import pickle
