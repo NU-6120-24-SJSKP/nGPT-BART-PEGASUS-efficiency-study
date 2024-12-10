@@ -1,0 +1,28 @@
+main.py → SummarizationPipeline
+├── 1. Basic Setup
+│   ├── Set random seed
+│   ├── Setup GPU/CPU device
+│   └── Create directories
+│
+├── 2. Initialize Components
+│   ├── Create model (model.py)
+│   ├── Load tokenizer
+│   ├── Verify model parameters
+│   └── Load data (data.py)
+│
+├── 3. Training Phase (train.py)
+│   ├── Setup optimizers
+│   ├── Training loop
+│   │   ├── Forward pass
+│   │   ├── Backward pass
+│   │   ├── Optimization
+│   │   └── Metrics tracking
+│   └── Validation loop
+│
+├── 4. Evaluation Phase (validate.py, test.py)
+│   ├── Calculate ROUGE scores
+│   ├── Generate example summaries
+│   └── Performance metrics
+│
+└── 5. Visualization (plot.py)
+    └── Generate all training plots
