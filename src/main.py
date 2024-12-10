@@ -100,7 +100,7 @@ class SummarizationPipeline:
             
             # Generate training plots
             print("\nGenerating training plots...")
-            plotter = MetricsPlotter()
+            plotter = MetricsPlotter(save_dir=PathConfig.PLOT_DIR)
             plotter.create_all_plots()
             
         except Exception as e:
