@@ -3,16 +3,16 @@ import os
 import torch
 from torch.utils.data import DataLoader
 
-from config import device, SEQ_LEN, BATCH_SIZE
-from data import dataset, TextSamplerDataset, collate_fn
-from helpers import cycle
+from ngpt.config import device, SEQ_LEN, BATCH_SIZE
+from ngpt.data import dataset, TextSamplerDataset, collate_fn
+from ngpt.helpers import cycle
 
 VALIDATE_EVERY_EPOCH = 1
 val_loss_per_epoch = []
 perplexities = []
 training_tokens = []
 best_val_loss = float("inf")
-CHECKPOINT_DIR = "checkpoints"
+CHECKPOINT_DIR = "ngpt/checkpoints"
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 BEST_MODEL_PATH = os.path.join(CHECKPOINT_DIR, "best_model.pt")
 patience_counter = 0
@@ -26,7 +26,7 @@ val_loader = cycle(val_loader)
 def validate_model(epoch):
     global best_val_loss, patience_counter
     if (epoch + 1) == 1 or (epoch + 1) % VALIDATE_EVERY_EPOCH == 0:
-        from model import model
+        from ngpt.model import model
 
         model.eval()
         with torch.no_grad():

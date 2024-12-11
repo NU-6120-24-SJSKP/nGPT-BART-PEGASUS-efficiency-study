@@ -5,12 +5,12 @@ import tracemalloc
 import torch
 from rouge_score import rouge_scorer
 
-from config import PRIME_LENGTH, GENERATE_EVERY_EPOCH, device, GENERATE_LENGTH
-from helpers import (
+from ngpt.config import PRIME_LENGTH, GENERATE_EVERY_EPOCH, device, GENERATE_LENGTH
+from ngpt.helpers import (
     decode_tokens,
     base_decoding,
 )
-from validate import val_dataset
+from ngpt.validate import val_dataset
 
 memory_usages = []
 inference_times = []
@@ -26,7 +26,7 @@ def prompt_cumulative_inference(prompt, val_dataset, prime):
     global model
     start_time = time.time()
     tracemalloc.start()
-    from model import model
+    from ngpt.model import model
 
     sampled = base_decoding(model, prompt, GENERATE_LENGTH)
     end_time = time.time()
@@ -61,7 +61,7 @@ def prompt_cumulative_inference(prompt, val_dataset, prime):
 
 def generate_summary(epoch):
     if (epoch + 1 == 1) or (epoch + 1) % GENERATE_EVERY_EPOCH == 0:
-        from model import model
+        from ngpt.model import model
 
         model.eval()
         with torch.no_grad():

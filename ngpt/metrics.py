@@ -1,7 +1,7 @@
 import pickle
 
-from config import train_loss_per_epoch, val_loss_per_epoch, perplexities
-from test import (
+from ngpt.config import train_loss_per_epoch, val_loss_per_epoch, perplexities
+from ngpt.test import (
     generation_perplexities,
     tokens_per_second,
     memory_usages,
@@ -25,5 +25,5 @@ def construct_metrics():
         "inference_times": inference_times,  # generation_epochs
         "rouge_scores": rouge_scores,
     }
-    with open("metrics.pkl", "wb") as f:
+    with open("ngpt/results/metrics.pkl", "wb") as f:
         pickle.dump(metrics, f)

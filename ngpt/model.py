@@ -1,6 +1,6 @@
 from nGPT_pytorch import nGPT
 
-from config import device
+from ngpt.config import device
 
 USE_PARAMETRIZE = True
 model = None

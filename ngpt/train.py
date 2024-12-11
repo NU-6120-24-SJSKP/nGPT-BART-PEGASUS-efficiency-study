@@ -4,13 +4,13 @@ import tqdm
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 
-from config import *
-from data import dataset, TextSamplerDataset, collate_fn
-from helpers import *
-from metrics import construct_metrics
-from model import USE_PARAMETRIZE, init_model
-from test import generate_summary
-from validate import validate_model
+from ngpt.config import *
+from ngpt.data import dataset, TextSamplerDataset, collate_fn
+from ngpt.helpers import *
+from ngpt.metrics import construct_metrics
+from ngpt.model import USE_PARAMETRIZE, init_model
+from ngpt.test import generate_summary
+from ngpt.validate import validate_model
 
 
 class NGPTTrainer:
@@ -31,7 +31,7 @@ class NGPTTrainer:
 
         # Optimizer setup
         init_model(params)
-        from model import model
+        from ngpt.model import model
 
         self.model = model
 

@@ -2,7 +2,7 @@ import pickle
 
 import matplotlib.pyplot as plt
 
-with open("metrics.pkl", "rb") as f:
+with open("results/metrics.pkl", "rb") as f:
     metrics = pickle.load(f)
 
 train_loss_per_epoch = metrics["train_loss_per_epoch"]

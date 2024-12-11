@@ -5,7 +5,7 @@ from datasets import load_dataset
 from torch._C._nn import pad_sequence
 from torch.utils.data import Dataset
 
-from config import device
+from ngpt.config import device
 
 
 def tokenize(examples):
@@ -21,7 +21,7 @@ def tokenize(examples):
 dataset = load_dataset(
     "cnn_dailymail",
     "3.0.0",
-    split={"train": "train[:100]", "validation": "validation[:10]"},
+    split={"train": "train[:10]", "validation": "validation[:1]"},
 )
 # dataset = load_dataset("cnn_dailymail", "3.0.0")
 dataset = dataset.map(

@@ -1,7 +1,7 @@
 import argparse
 import json
 
-from train import NGPTTrainer
+from ngpt.train import NGPTTrainer
 
 parser = argparse.ArgumentParser(description="Train a model with specified parameters.")
 parser.add_argument(
