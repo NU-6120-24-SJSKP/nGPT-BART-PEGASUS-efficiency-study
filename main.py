@@ -13,12 +13,6 @@ parser.add_argument(
     required=False,
     help="Path to the JSON file containing model parameters.",
 )
-parser.add_argument(
-    "--TRAIN", type=int, required=False, help="Number of training samples."
-)
-parser.add_argument(
-    "--VALIDATE", type=int, required=False, help="Number of validation samples."
-)
 args = parser.parse_args()
 param_file = args.PARAMS
 
