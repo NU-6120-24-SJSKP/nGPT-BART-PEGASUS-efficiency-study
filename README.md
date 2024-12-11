@@ -55,8 +55,8 @@ This project aims to evaluate and compare the performance of **nGPT** (Nvidia's 
   - BART: 
 
 ## Outcomes
-[Report.pdf]()
-[Presentation.pdf](./Presentation.pdf)
+- [Report.pdf]()
+- [Presentation.pdf](./docs/Presentation.pdf)
 
 ## How to Run the Code
 ```bash
