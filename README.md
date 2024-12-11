@@ -50,7 +50,7 @@ This project aims to evaluate and compare the performance of **nGPT** (Nvidia's 
 ### Stability
 
 - **Loss Curves**: 
-  - nGPT: [Plots](https://github.com/NU-6120-24-SJSKP/nGPT-BART-PEGASUS-efficiency-study/tree/main/ngpt/plots)
+  - nGPT: [Plots](./ngpt/plots)
   - PEGASUS: 
   - BART: 
 
