@@ -1,10 +1,21 @@
 import torch
 from torch.optim import AdamW
-from transformers import get_linear_schedule_with_warmup
+from transformers import get_linear_schedule_with_warmup,BartTokenizer
 from tqdm import tqdm
 import pickle
 import time
-from validate import Validator
+from bart.validate import Validator
+import os
+from bart.config import TrainingConfig, create_small_bart_config
+from bart.data import load_data, create_dataloaders
+from bart.helper import set_seed, verify_model_size, cleanup, inspect_frozen_params
+from bart.model import SummarizationModel
+from bart.metrics import evaluate
+from bart.plot import (plot_rouge_scores, plot_train_loss_per_step, 
+                 plot_val_loss_per_epoch, plot_train_val_loss, 
+                 plot_val_perplexity, plot_inference_time, 
+                 plot_tokens_per_second, plot_peak_memory_usage, 
+                 plot_training_tokens_loss)
 
 class Trainer:
     def __init__(self, model, train_loader, val_loader, tokenizer, device, config, training_config):
@@ -195,3 +206,89 @@ class Trainer:
             torch.save(checkpoint_dict, f'emergency_checkpoint_epoch_{epoch}.pth')
         except Exception as e:
             print(f"Failed to save emergency checkpoint: {e}")
+
+def run_train(params):
+    try:
+        os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+        # Setup
+        set_seed()
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
+        # Initialize model and tokenizer
+        tokenizer = BartTokenizer.from_pretrained('facebook/bart-base')
+        config = create_small_bart_config(params)
+        summarization_model = SummarizationModel(config, device)
+        model = summarization_model.model
+        
+        # Verify model parameters
+        total_params, trainable_params = verify_model_size(model)
+        print(f"Total parameters: {total_params:,}")
+        print(f"Trainable parameters: {trainable_params:,}")
+        inspect_frozen_params(model)
+        
+        # Load data
+        train_data, val_data = load_data(num_samples=15000)
+        train_loader, val_loader = create_dataloaders(
+            train_data, 
+            val_data, 
+            tokenizer, 
+            TrainingConfig.BATCH_SIZE, 
+            TrainingConfig.MAX_INPUT_LENGTH, 
+            TrainingConfig.MAX_TARGET_LENGTH
+        )
+        
+        # Initialize trainer and start training
+        trainer = Trainer(
+            model, 
+            train_loader, 
+            val_loader, 
+            tokenizer, 
+            device, 
+            config, 
+            TrainingConfig
+        )
+        training_time = trainer.train()
+        
+        # Save final model
+        model_save_path = "./final_bart_model.pth"
+        summarization_model.save_model(model_save_path, config)
+        print(f"Final model saved at {model_save_path}")
+        
+        # Generate plots
+        plot_rouge_scores()
+        plot_train_loss_per_step()
+        plot_val_loss_per_epoch()
+        plot_train_val_loss()
+        plot_val_perplexity()
+        plot_inference_time()
+        plot_tokens_per_second()
+        plot_peak_memory_usage()
+        plot_training_tokens_loss()
+        
+        # Final evaluation
+        print("Evaluating fine-tuned model...")
+        rouge_scores, inference_time, total_tokens, peak_memory = evaluate(
+            model=model,
+            data_loader=val_loader,
+            tokenizer=tokenizer,
+            device=device
+        )
+        print("Fine-tuned Model Performance:")
+        print(f"ROUGE Scores: {rouge_scores}")
+        print(f"Total training time: {training_time:.2f} seconds")
+        print(f"Inference time: {inference_time:.2f} seconds")
+        print(f"Tokens processed: {total_tokens}")
+        print(f"Peak memory usage: {peak_memory:.2f} MB")
+        
+        print("\nGenerating example summaries...")
+        for i in range(3):
+            article = val_data[i]["article"]
+            reference = val_data[i]["highlights"]
+            generated = summarization_model.generate_summary(article)
+            print(f"\nArticle {i+1}:")
+            print(f"Reference: {reference}")
+            print(f"Generated: {generated}")
+            print("-" * 50)
+            
+    finally:
+        cleanup()

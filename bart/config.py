@@ -11,8 +11,22 @@ class TrainingConfig:
     WEIGHT_DECAY = 0.01
     EARLY_STOPPING_PATIENCE = 3
 
-def create_small_bart_config():
-    config = BartConfig(
+def create_small_bart_config(params = None):
+    if params:
+        config = BartConfig(
+        vocab_size=params.vocab_size,
+        max_position_embeddings=params.pos_embedding,
+        d_model=params.d_model,
+        encoder_layers=params.encoder_layers,
+        decoder_layers=params.decoder_layers,
+        encoder_attention_heads=params.enc_attn_head,
+        decoder_attention_heads=params.dec_attn_head,
+        encoder_ffn_dim=params.enc_ffnn_dim,
+        decoder_ffn_dim=params.decc_ffnn_dim,
+        activation_function="gelu"
+        )
+    else:
+        config = BartConfig(
         vocab_size=50265,
         max_position_embeddings=512,
         d_model=600,
@@ -23,5 +37,5 @@ def create_small_bart_config():
         encoder_ffn_dim=2304,
         decoder_ffn_dim=2304,
         activation_function="gelu"
-    )
+        )     
     return config

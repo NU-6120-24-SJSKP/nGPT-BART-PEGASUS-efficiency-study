@@ -135,8 +135,8 @@ def inference():
 
 def main():
     torch.cuda.empty_cache()
-    # train_model()
-    inference()
+    train_model()
+    # inference()
 
 if __name__ == "__main__":
     main()
