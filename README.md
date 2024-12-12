@@ -31,28 +31,28 @@ This project aims to evaluate and compare the performance of **nGPT** (Nvidia's 
 
 ## Results
 
-### Summarization Quality
+### Summarization Quality (15K samples, 100M parameters)
 
 | Model   | ROUGE-1 | ROUGE-2 | ROUGE-L |
 |---------|---------|---------|---------|
 | nGPT    | 0.289   | 0.039   | 0.141   |
-| PEGASUS |         |         |         |
-| BART    |         |         |         |
+| PEGASUS | 0.125   | 0.0125  | 0.095   |
+| BART    | 0.122   | 0.013   | 0.101   |
 
-### Training Speed
+### Training Speed (15K samples, 100M parameters)
 
-| Model   | Time per Epoch (s) | Total Training Time (h) |
+| Model   | Time per Epoch (min)  | Total Training Time (h) |
 |---------|---------------------|-------------------------|
 | nGPT    |    2 mins           |  1hr 11min              |
-| PEGASUS |                     |                         |
-| BART    |                     |                         |
+| PEGASUS |    26 mins          |  5hr 32min              |
+| BART    |    20 mins          |  4hr 42min              |
 
 ### Stability
 
 - **Loss Curves**: 
   - nGPT: [Plots](./ngpt/plots)
-  - PEGASUS: 
-  - BART: 
+  - PEGASUS: [Plots](./pegasus/plots)
+  - BART: [Plots](./bart/plots)
 
 ## Outcomes
 - [Report.pdf]()
