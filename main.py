@@ -12,7 +12,7 @@ parser.add_argument(
     "--PARAMS",
     type=str,
     required=False,
-    help="Path to the JSON file containing model parameters.",
+    help="Path to the JSON file containing model parameters. Examples under params in root of the project",
 )
 args = parser.parse_args()
 param_file = args.PARAMS
