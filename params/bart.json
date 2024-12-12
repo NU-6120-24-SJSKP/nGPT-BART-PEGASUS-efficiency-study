@@ -1,0 +1,11 @@
+{
+    "vocab_size": 50265,
+    "pos_embedding": 512,
+    "d_model": 600,
+    "encoder_layers": 7,
+    "decoder_layers": 7,
+    "enc_attn_head": 8,
+    "dec_attn_head": 8,
+    "enc_ffnn_dim": 2304,
+    "decc_ffnn_dim": 2304
+}
