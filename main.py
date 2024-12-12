@@ -2,6 +2,7 @@ import argparse
 import json
 
 from ngpt.train import NGPTTrainer
+from bart.train import run_train
 
 parser = argparse.ArgumentParser(description="Train a model with specified parameters.")
 parser.add_argument(
@@ -31,6 +32,6 @@ if str(args.MODEL).lower() == "ngpt":
     nGPT = NGPTTrainer(params)
     nGPT.train()
 elif str(args.MODEL).lower() == "bart":
-    pass
+    run_train(params)
 elif str(args.MODEL).lower() == "pegasus":
     pass
