@@ -52,7 +52,7 @@ This project aims to evaluate and compare the performance of **nGPT** (Nvidia's 
 - **Loss Curves**: 
   - nGPT: [Plots](./ngpt/plots)
   - PEGASUS: [Plots](./pegasus/plots)
-  - BART: [Plots](./bart/plots)
+  - BART: [Plots](./bart/100M15000samples)
 
 ## Outcomes
 - [Report.pdf]()
