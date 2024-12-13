@@ -62,6 +62,7 @@ This project aims to evaluate and compare the performance of **nGPT** (Nvidia's 
 ```bash
 # make sure to have git installed 
 git clone https://github.com/NU-6120-24-SJSKP/nGPT-BART-PEGASUS-efficiency-study.git
+cd nGPT-BART-PEGASUS-efficiency-study
 git checkout main
 # make sure have python 3.12 and python3-pip installed
 python -m venv .env
