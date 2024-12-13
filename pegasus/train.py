@@ -10,10 +10,10 @@ from torch.utils.data import DataLoader
 from transformers import get_linear_schedule_with_warmup
 from tqdm import tqdm
 
-from config import TrainingConfig, PathConfig
-from metrics import MetricsTracker, Evaluator
-from model import SummarizationModel
-from helpers import save_checkpoint, print_gpu_utilization
+from pegasus.config import TrainingConfig, PathConfig
+from pegasus.metrics import MetricsTracker, Evaluator
+from pegasus.model import SummarizationModel
+from pegasus.helpers import save_checkpoint, print_gpu_utilization
 
 class Trainer:
     """
