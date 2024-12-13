@@ -3,6 +3,7 @@ import json
 
 from ngpt.train import NGPTTrainer
 from bart.train import run_train
+from pegasus.pipeline import SummarizationPipeline
 
 parser = argparse.ArgumentParser(description="Train a model with specified parameters.")
 parser.add_argument(
@@ -34,4 +35,5 @@ if str(args.MODEL).lower() == "ngpt":
 elif str(args.MODEL).lower() == "bart":
     run_train(params)
 elif str(args.MODEL).lower() == "pegasus":
-    pass
+    summ = SummarizationPipeline(params)
+    summ.train_model()
