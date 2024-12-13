@@ -8,13 +8,13 @@ from typing import NoReturn
 import sys
 from pathlib import Path
 
-from config import TrainingConfig, PathConfig
-from model import SummarizationModel
-from data import DataManager
-from train import Trainer
-from test import ModelTester
-from plot import MetricsPlotter
-from helpers import (
+from pegasus.config import TrainingConfig, PathConfig
+from pegasus.model import SummarizationModel
+from pegasus.data import DataManager
+from pegasus.train import Trainer
+from pegasus.test import ModelTester
+from pegasus.plot import MetricsPlotter
+from pegasus.helpers import (
     set_seed,
     get_device,
     verify_model_size,
@@ -27,10 +27,10 @@ class SummarizationPipeline:
     Main class for orchestrating the summarization pipeline.
     """
     
-    def __init__(self):
+    def __init__(self, params):
         """Initialize the pipeline with basic setup."""
         self.setup_basics()
-        self.initialize_components()
+        self.initialize_components(params)
     
     def setup_basics(self) -> None:
         """Perform basic setup operations."""
@@ -49,11 +49,11 @@ class SummarizationPipeline:
             print(f"Error in basic setup: {e}")
             sys.exit(1)
     
-    def initialize_components(self) -> None:
+    def initialize_components(self, params) -> None:
         """Initialize model, tokenizer, and data components."""
         try:
             # Initialize model
-            self.model = SummarizationModel(self.device)
+            self.model = SummarizationModel(self.device, params=params)
             self.model.initialize_model()
             
             # Verify model size

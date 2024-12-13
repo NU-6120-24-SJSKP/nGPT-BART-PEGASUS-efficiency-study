@@ -9,9 +9,7 @@ from tqdm import tqdm
 from rouge_score import rouge_scorer
 from dataclasses import dataclass
 
-from config import TrainingConfig, PathConfig
-from model import SummarizationModel
-from helpers import print_gpu_utilization
+from pegasus.model import SummarizationModel
 
 @dataclass
 class TestExample:

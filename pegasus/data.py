@@ -8,7 +8,7 @@ from torch.utils.data import Dataset, DataLoader
 from datasets import load_dataset
 from transformers import PreTrainedTokenizer
 from typing import Tuple, Dict, Any
-from config import TrainingConfig
+from pegasus.config import TrainingConfig
 
 class SummarizationDataset(Dataset,TrainingConfig):
     """

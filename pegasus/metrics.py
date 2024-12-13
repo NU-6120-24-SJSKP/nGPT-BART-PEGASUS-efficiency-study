@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from rouge_score import rouge_scorer
 from tqdm import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizer
-from config import TrainingConfig, PathConfig
+from pegasus.config import TrainingConfig, PathConfig
 
 class MetricsTracker:
     """

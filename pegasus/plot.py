@@ -6,7 +6,7 @@ Contains functions for generating and saving various types of plots.
 import matplotlib.pyplot as plt
 from typing import Dict, Any
 import pickle
-from config import PathConfig
+from pegasus.config import PathConfig
 
 class MetricsPlotter:
     """

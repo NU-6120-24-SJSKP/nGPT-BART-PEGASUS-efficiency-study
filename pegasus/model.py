@@ -11,7 +11,7 @@ from transformers import (
     PreTrainedModel,
     PreTrainedTokenizer
 )
-from config import ModelConfig, TrainingConfig, GenerationConfig
+from pegasus.config import ModelConfig, TrainingConfig, GenerationConfig
 
 class SummarizationModel:
     """
@@ -22,7 +22,8 @@ class SummarizationModel:
     def __init__(
         self,
         device: torch.device,
-        model_config: Optional[Dict[str, Any]] = None
+        model_config: Optional[Dict[str, Any]] = None,
+        params = None,
     ):
         """
         Initialize the summarization model.
@@ -33,7 +34,7 @@ class SummarizationModel:
         """
         self.device = device
         self.config = (model_config if model_config is not None 
-                      else ModelConfig.create_small_pegasus_config())
+                      else ModelConfig.create_small_pegasus_config(params))
         self.model: Optional[PreTrainedModel] = None
         self.tokenizer: Optional[PreTrainedTokenizer] = None
         

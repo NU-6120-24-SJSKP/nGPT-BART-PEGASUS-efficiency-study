@@ -7,7 +7,7 @@ import torch
 import matplotlib.pyplot as plt
 from typing import Tuple, List, Dict
 from transformers import PreTrainedModel
-from config import TrainingConfig, PathConfig
+from pegasus.config import TrainingConfig, PathConfig
 
 def set_seed(seed: int = TrainingConfig.SEED) -> None:
     """
