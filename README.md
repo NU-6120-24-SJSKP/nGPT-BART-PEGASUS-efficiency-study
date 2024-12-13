@@ -73,6 +73,9 @@ pip install -r pegasus/requirements.txt
 # help on using the script
 python main.py -h
 python main.py --MODEL `ngpt|bart|pegasus`
+# example
+# python main.py --MODEL ngpt --PARAMS params/ngpt.json #use corresponding model params only
+# or just python main.py --MODEL ngpt
 ```
 
 ## Credits
