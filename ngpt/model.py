@@ -19,7 +19,7 @@ def init_model(params):
             attn_norm_qk=params["attn_norm_qk"],
             manual_norm_weights=params["manual_norm_weights"],
         ).to(device)
-    except AttributeError as e:
+    except KeyError as e:
         print("Complete set of parameters were not provided for BART \n"
               "Look at parameters help using 'python main.py -h'. Using default values")
         model = nGPT(
