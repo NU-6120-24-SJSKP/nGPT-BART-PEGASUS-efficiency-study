@@ -6,7 +6,6 @@ plots/Test/tokens_per_second_vs_epoch.png
 plots/Test/train_loss_per_step.png
 plots/Test/training_progress.png
 plots/Test/val_perplexity_per_epoch.png
-src/config.py
 src/__pycache__/data.cpython-310.pyc
 src/__pycache__/helpers.cpython-310.pyc
 src/__pycache__/metrics.cpython-310.pyc
@@ -15,3 +14,8 @@ src/__pycache__/plot.cpython-310.pyc
 src/__pycache__/test.cpython-310.pyc
 src/__pycache__/train.cpython-310.pyc
 src/__pycache__/config.cpython-310.pyc
+src/.DS_Store
+.DS_Store
+.gitignore
+src/.DS_Store
+.gitignore

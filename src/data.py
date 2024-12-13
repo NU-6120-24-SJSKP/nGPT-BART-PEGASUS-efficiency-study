@@ -10,7 +10,7 @@ from transformers import PreTrainedTokenizer
 from typing import Tuple, Dict, Any
 from config import TrainingConfig
 
-class SummarizationDataset(Dataset):
+class SummarizationDataset(Dataset,TrainingConfig):
     """
     Custom Dataset class for text summarization task.
     Handles tokenization and preparation of input-target pairs.
