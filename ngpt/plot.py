@@ -2,9 +2,11 @@ import pickle
 
 import matplotlib.pyplot as plt
 
+# Load metrics from a pickle file
 with open("results/metrics.pkl", "rb") as f:
     metrics = pickle.load(f)
 
+# Extract various metrics from the loaded data
 train_loss_per_epoch = metrics["train_loss_per_epoch"]
 val_loss_per_epoch = metrics["val_loss_per_epoch"]
 perplexities = metrics["perplexities"]
@@ -15,7 +17,7 @@ inference_times = metrics["inference_times"]
 training_tokens = metrics["training_tokens"]
 rouge_scores = metrics["rouge_scores"]
 
-
+# Plot Training Loss vs Epochs
 plt.figure(figsize=(8, 6))
 plt.plot(range(1, len(train_loss_per_epoch) + 1), train_loss_per_epoch)
 plt.title("Training Loss vs Epochs")
@@ -23,6 +25,7 @@ plt.xlabel("Training Epochs")
 plt.ylabel("Training Loss")
 plt.savefig("train_loss_vs_epoch.png")
 
+# Plot Validation Loss vs Epochs
 plt.figure(figsize=(8, 6))
 plt.plot(range(1, len(val_loss_per_epoch) + 1), val_loss_per_epoch)
 plt.title("Validation Loss vs Epochs")
@@ -30,6 +33,8 @@ plt.xlabel("Validation Epochs")
 plt.ylabel("Validation Loss")
 plt.savefig("validation_loss_vs_epoch.png")
 
+# Plot both Training and Validation Loss vs Epochs
+plt.figure(figsize=(8, 6))
 plt.plot(
     range(1, len(train_loss_per_epoch) + 1),
     train_loss_per_epoch,
@@ -48,6 +53,7 @@ plt.ylabel("Loss")
 plt.legend()
 plt.savefig("train_loss_validation_loss_vs_epoch.png")
 
+# Plot Validation Perplexity vs Epochs
 plt.figure(figsize=(8, 6))
 plt.plot(range(1, len(val_loss_per_epoch) + 1), perplexities)
 plt.title("Validation Perplexity (Combined)")
@@ -78,16 +84,16 @@ plt.xlabel("Epochs (Generation Steps)")
 plt.ylabel("Memory Usage (MB)")
 plt.savefig("inference_graphs.png")
 
-# Generation perplexity
+# Plot Generation Perplexity vs Epochs
 plt.figure(figsize=(8, 6))
 plt.plot(range(1, len(generation_perplexities) + 1), generation_perplexities)
 plt.title("Generation epochs vs Generation Perplexity")
 plt.xlabel("Epochs (Generation Steps)")
 plt.ylabel("Generation Perplexity")
 plt.savefig("generation_perplexities.png")
-# plt.show()
+# plt.show()  # Commented out, likely for non-interactive plotting
 
-# Loss vs training tokens like in the paper
+# Plot Validation Loss vs Training Tokens
 plt.figure(figsize=(8, 6))
 plt.plot(training_tokens, val_loss_per_epoch)
 plt.title("Validation Loss vs. Training Tokens")
@@ -96,6 +102,7 @@ plt.ylabel("Validation Loss")
 plt.grid(True)
 plt.savefig("tokens_per_loss.png")
 
+# Plot ROUGE Scores
 plt.figure(figsize=(8, 6))
 rouge1_fmeasures = [score["rouge1"].fmeasure for score in metrics["rouge_scores"]]
 rouge2_fmeasures = [score["rouge2"].fmeasure for score in metrics["rouge_scores"]]

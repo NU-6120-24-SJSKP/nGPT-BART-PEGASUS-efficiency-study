@@ -11,19 +11,27 @@ from ngpt.test import (
 
 
 def construct_metrics():
+    """
+    Construct and save various metrics from the training and testing process to a pickle file.
+
+    This function aggregates all the metrics collected during training and testing into a dictionary
+    and then saves it to a file for later analysis or visualization.
+    """
     metrics = {
-        # losses
-        "train_loss_per_epoch": train_loss_per_epoch,  # NUM_EPOCHS
-        "val_loss_per_epoch": val_loss_per_epoch,  # validation_epochs
-        # "validation_epochs": validation_epochs,
-        # perplexities
-        "perplexities": perplexities,  # validation_epochs
-        "generation_perplexities": generation_perplexities,  # generation_epochs
-        # inference and memory
-        "tokens_per_second": tokens_per_second,  # generation_epochs
-        "memory_usages": memory_usages,  # generation_epochs
-        "inference_times": inference_times,  # generation_epochs
-        "rouge_scores": rouge_scores,
+        # Training and validation losses
+        "train_loss_per_epoch": train_loss_per_epoch,  # List of training losses for each epoch
+        "val_loss_per_epoch": val_loss_per_epoch,  # List of validation losses for each epoch
+        # Perplexity metrics
+        "perplexities": perplexities,  # List of validation perplexities
+        "generation_perplexities": generation_perplexities,  # List of generation perplexities
+        # Inference and memory metrics
+        "tokens_per_second": tokens_per_second,  # List of tokens generated per second during inference
+        "memory_usages": memory_usages,  # List of peak memory usages during inference
+        "inference_times": inference_times,  # List of inference times
+        # ROUGE scores for text generation evaluation
+        "rouge_scores": rouge_scores,  # List of ROUGE scores for generated summaries
     }
+
+    # Save the metrics dictionary to a pickle file
     with open("ngpt/results/metrics.pkl", "wb") as f:
         pickle.dump(metrics, f)

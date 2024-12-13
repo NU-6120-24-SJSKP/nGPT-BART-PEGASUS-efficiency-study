@@ -15,8 +15,8 @@ from ngpt.validate import validate_model
 
 class NGPTTrainer:
     def __init__(self, params):
-        # GPU-specific checks
-        assert not (USE_AMP and not torch.cuda.is_available())
+        # Ensure Automatic Mixed Precision (AMP) is only used with CUDA
+        assert not (USE_AMP and not torch.cuda.is_available()), "AMP requires CUDA"
 
         # Prepare datasets and dataloaders
         self.train_dataset = TextSamplerDataset(dataset["train"], SEQ_LEN)
@@ -29,26 +29,28 @@ class NGPTTrainer:
             )
         )
 
-        # Optimizer setup
+        # Initialize the model and optimizer
         init_model(params)
         from ngpt.model import model
 
         self.model = model
-
         self.optim = Adam(self.model.parameters(), lr=LEARNING_RATE)
 
-        # Register normalizing step if not using parameterization
+        # Register a step hook for normalization if not using parameterization
         if not USE_PARAMETRIZE:
             model.register_step_post_hook(self.optim)
 
         # Training parameters
         self.BATCHES_PER_EPOCH = len(self.train_dataset) // BATCH_SIZE
         self.STEPS_PER_EPOCH = len(self.train_dataset) // BATCH_SIZE
-        self.training_tokens = []
-        self.best_val_loss = float("inf")
-        self.patience_counter = 0
+        self.training_tokens = []  # To track the number of tokens seen during training
+        self.best_val_loss = float("inf")  # Initialize best validation loss
+        self.patience_counter = 0  # Counter for early stopping
 
     def train(self):
+        """
+        Main training loop for the NGPT model.
+        """
         train_start_time = time.time()
         epoch_iterator = tqdm.tqdm(range(NUM_EPOCHS), mininterval=10.0, desc="training")
 
@@ -68,22 +70,25 @@ class NGPTTrainer:
                 if batch_idx >= self.STEPS_PER_EPOCH:
                     break
 
+                # Set model to training mode
                 self.model.train()
                 data = data.to(device)
 
+                # Use Automatic Mixed Precision if enabled
                 with torch.autocast(
-                    device_type="cuda", dtype=torch.float16, enabled=USE_AMP
+                        device_type="cuda", dtype=torch.float16, enabled=USE_AMP
                 ):
                     loss = self.model(data, return_loss=True)
 
+                # Normalize loss for gradient accumulation
                 loss = loss / GRAD_ACCUM_EVERY
                 loss.backward()
 
                 running_loss += loss.item()
 
-                # Gradient accumulation step
+                # Perform optimization step after accumulating gradients
                 if (batch_idx + 1) % GRAD_ACCUM_EVERY == 0 or (
-                    batch_idx + 1 == self.STEPS_PER_EPOCH
+                        batch_idx + 1 == self.STEPS_PER_EPOCH
                 ):
                     scaler.step(self.optim)
                     scaler.update()
@@ -95,10 +100,11 @@ class NGPTTrainer:
 
                     running_loss = 0.0
 
+                # Track tokens seen during training
                 tokens_seen_so_far += data.numel()
                 self.training_tokens.append(tokens_seen_so_far)
 
-            # Validation step
+            # Validation step after each epoch
             if validate_model(epoch) == "stop":
                 break
 
@@ -113,12 +119,14 @@ class NGPTTrainer:
             time_per_epoch = (epoch_end_time - epoch_start_time) / (epoch + 1)
             print(f"Time per Epoch: {time_per_epoch:.4f} seconds")
 
+            # Construct metrics for logging
             construct_metrics()
 
             # Save checkpoint at each epoch
             print(f"Saving model at epoch {epoch + 1}")
             torch.save(self.model.state_dict(), EPOCH_MODEL)
 
+        # Final metrics construction and model saving
         construct_metrics()
         torch.save(self.model.state_dict(), TRAIN_MODEL)
 
