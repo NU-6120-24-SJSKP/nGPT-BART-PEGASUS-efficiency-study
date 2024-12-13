@@ -72,4 +72,8 @@ pip install -r pegasus/requirements.txt
 # help on using the script
 python main.py -h
 python main.py --MODEL `ngpt|bart|pegasus`
+```
 
+## Credits
+- HuggingFace
+- lucidrains for the nGPT-pytorch (org link: https://github.com/lucidrains/nGPT-pytorch)
