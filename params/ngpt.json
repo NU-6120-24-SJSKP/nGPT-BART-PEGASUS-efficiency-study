@@ -1,0 +1,10 @@
+{
+    "num_tokens": 256,
+    "dim": 1024,
+    "depth": 8,
+    "dim_head": 128,
+    "tied_embedding": true,
+    "add_value_residual": true,
+    "attn_norm_qk": false,
+    "manual_norm_weights": false
+}
