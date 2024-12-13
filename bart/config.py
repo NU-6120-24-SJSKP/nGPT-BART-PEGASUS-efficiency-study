@@ -25,7 +25,7 @@ def create_small_bart_config(params=None):
             decoder_ffn_dim=params['decc_ffnn_dim'],
             activation_function="gelu"
         )
-    except AttributeError:
+    except KeyError as e:
         print("Complete set of parameters were not provided for BART \n"
               "Look at parameters help using 'python main.py -h'. Using default values")
         config = BartConfig(

@@ -11,7 +11,6 @@ from torch.utils.data import DataLoader
 import numpy as np
 
 from model import SummarizationModel
-from helpers import print_gpu_utilization
 from config import TrainingConfig
 
 @dataclass
